@@ -368,6 +368,11 @@ fn main() {
         cmd.arg(format!("--with-lg-page={lg_page}"));
     }
 
+    if read_and_watch_env("JEMALLOC_SYS_DISABLE_USER_CONFIG").is_ok() {
+        info!("--disable-user-config");
+        cmd.arg("--disable-user-config");
+    }
+
     if let Ok(lg_hugepage) = read_and_watch_env("JEMALLOC_SYS_WITH_LG_HUGEPAGE") {
         info!("--with-lg-hugepage={}", lg_hugepage);
         cmd.arg(format!("--with-lg-hugepage={lg_hugepage}"));

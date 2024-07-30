@@ -793,6 +793,7 @@ with_install_suffix
 with_malloc_conf
 enable_debug
 enable_stats
+enable_user_config
 enable_experimental_smallocx
 enable_prof
 enable_prof_libunwind
@@ -1448,6 +1449,8 @@ Optional Features:
   --enable-static         Build static libaries
   --enable-debug          Build debugging code
   --disable-stats         Disable statistics calculation/reporting
+  --disable-user-config   Do not read malloc config from /etc/malloc.conf or
+                          MALLOC_CONF
   --enable-experimental-smallocx
                           Enable experimental smallocx API
   --enable-prof           Enable allocation profiling
@@ -11004,6 +11007,28 @@ $as_echo "#define JEMALLOC_STATS  " >>confdefs.h
 fi
 
 
+# Check whether --enable-user_config was given.
+if test "${enable_user_config+set}" = set; then :
+  enableval=$enable_user_config; if test "x$enable_user_config" = "xno" ; then
+  enable_user_config="0"
+else
+  enable_user_config="1"
+fi
+
+else
+  enable_user_config="1"
+
+fi
+
+if test "x$enable_user_config" = "x1" ; then
+
+$as_echo "#define JEMALLOC_CONFIG_ENV  " >>confdefs.h
+
+
+$as_echo "#define JEMALLOC_CONFIG_FILE  " >>confdefs.h
+
+fi
+
 # Check whether --enable-experimental_smallocx was given.
 if test "${enable_experimental_smallocx+set}" = set; then :
   enableval=$enable_experimental_smallocx; if test "x$enable_experimental_smallocx" = "xno" ; then
@@ -15792,6 +15817,8 @@ $as_echo "autogen            : ${enable_autogen}" >&6; }
 $as_echo "debug              : ${enable_debug}" >&6; }
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: stats              : ${enable_stats}" >&5
 $as_echo "stats              : ${enable_stats}" >&6; }
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: user_config        : ${enable_user_config}" >&5
+$as_echo "user_config        : ${enable_user_config}" >&6; }
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: experimental_smallocx : ${enable_experimental_smallocx}" >&5
 $as_echo "experimental_smallocx : ${enable_experimental_smallocx}" >&6; }
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: prof               : ${enable_prof}" >&5
