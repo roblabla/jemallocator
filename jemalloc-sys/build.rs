@@ -14,7 +14,10 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     process::Command,
+    sync::OnceLock,
 };
+
+use cc::Tool;
 
 include!("src/env.rs");
 
@@ -110,6 +113,69 @@ fn to_short_path(orig_path: &Path) -> Option<PathBuf> {
     };
 
     Some(PathBuf::from(path.trim()))
+}
+
+fn find_shell_arg(host: &str, build_dir: &Path) -> Option<String> {
+    if !cfg!(windows) {
+        return None;
+    }
+
+    let make = make_cmd_program(host);
+
+    // Override SHELL to use short paths if it's set to a path using spaces.
+    // This is often the case if using git bash as a shell, since it will be
+    // found in C:\Program Files\Git\bin\bash.exe. Github Actions does that.
+    //
+    // First, we have to find the SHELL variable. This is often hardcoded
+    // into the make binary, so we have to use `make -p` to find its value.
+    let make_vars = Command::new(make)
+        .current_dir(build_dir)
+        .arg("-p")
+        // this stinks.
+        .arg("-fNUL")
+        .output();
+    match make_vars {
+        Ok(make_vars_out)
+            if make_vars_out.status.success() || make_vars_out.status.code() == Some(2) =>
+        {
+            let out = String::from_utf8_lossy(&make_vars_out.stdout);
+            let mut found_shell = false;
+            for line in out.lines() {
+                if line.starts_with("SHELL ") {
+                    found_shell = true;
+                    // Once we've found the value, we must turn it into a
+                    // short_path if it contains a space.
+                    if let Some(shell) = line.split("= ").nth(1) {
+                        let shell = shell.trim();
+                        if shell.contains(' ') {
+                            if let Some(short_path) = to_short_path(Path::new(shell)) {
+                                // And finally, we override it using SHELL=X arg
+                                // syntax of makefiles.
+                                return Some(format!("SHELL={}", short_path.display()));
+                            }
+                        }
+                    }
+                }
+            }
+            if !found_shell {
+                warning!("Did not find SHELL value in make database.",);
+            }
+            None
+        }
+        Ok(make_vars_out) => {
+            warning!(
+                "Failed to run {} -p -fNUL, exited with status {}\nStderr: {}",
+                make,
+                make_vars_out.status,
+                String::from_utf8_lossy(&make_vars_out.stderr)
+            );
+            None
+        }
+        Err(err) => {
+            warning!("Failed to print builtin make values: {:?}", err);
+            None
+        }
+    }
 }
 
 // TODO: split main functions and remove following allow.
@@ -359,37 +425,25 @@ fn main() {
     run_and_log(&mut cmd, &build_dir.join("config.log"));
 
     // Make:
-    let make = make_cmd(&host);
-    let mut make_cmd = Command::new(make);
-    make_cmd
-        .current_dir(&build_dir)
+    run(make_cmd(&host, &build_dir, &compiler)
         .arg("-j")
-        .arg(num_jobs.clone());
-
-    for (env_key, env_value) in compiler.env() {
-        // MSVC compilers require a handful of environment variables to be set
-        // to work properly, so they can find their built-in include folders and
-        // default library path.
-        make_cmd.env(env_key, env_value);
-    }
-    run(&mut make_cmd);
+        .arg(num_jobs.clone()));
 
     // Skip watching this environment variables to avoid rebuild in CI.
     if env::var("JEMALLOC_SYS_RUN_JEMALLOC_TESTS").is_ok() {
         info!("Building and running jemalloc tests...");
         // Make tests:
-        run(Command::new(make)
-            .current_dir(&build_dir)
+        run(make_cmd(&host, &build_dir, &compiler)
             .arg("-j")
             .arg(num_jobs.clone())
             .arg("tests"));
 
         // Run tests:
-        run(Command::new(make).current_dir(&build_dir).arg("check"));
+        run(make_cmd(&host, &build_dir, &compiler).arg("check"));
     }
 
     // Make install:
-    run(Command::new(make)
+    run(make_cmd(&host, &build_dir, &compiler)
         .current_dir(&build_dir)
         .arg("install_lib_static")
         .arg("install_include")
@@ -480,7 +534,7 @@ fn gnu_target(target: &str) -> String {
     }
 }
 
-fn make_cmd(host: &str) -> &'static str {
+fn make_cmd_program(host: &str) -> &'static str {
     const GMAKE_HOSTS: &[&str] = &[
         "bitrig",
         "dragonfly",
@@ -496,6 +550,28 @@ fn make_cmd(host: &str) -> &'static str {
     } else {
         "make"
     }
+}
+
+fn make_cmd(host: &str, build_dir: &Path, compiler: &Tool) -> Command {
+    let mut make = Command::new(make_cmd_program(host));
+    make.current_dir(build_dir);
+
+    for (env_key, env_value) in compiler.env() {
+        // MSVC compilers require a handful of environment variables to be set
+        // to work properly, so they can find their built-in include folders and
+        // default library path.
+        make.env(env_key, env_value);
+    }
+
+    static SHELL_OVERRIDE: OnceLock<Option<String>> = OnceLock::new();
+
+    // Override SHELL if necessary. We cache the value of the SHELL to avoid
+    // recomputing it every time we run make.
+    if let Some(arg) = SHELL_OVERRIDE.get_or_init(|| find_shell_arg(host, build_dir)) {
+        make.arg(arg);
+    }
+
+    make
 }
 
 struct BackgroundThreadSupport {
