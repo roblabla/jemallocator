@@ -800,6 +800,7 @@ enable_prof_libunwind
 with_static_libunwind
 enable_prof_libgcc
 enable_prof_gcc
+enable_prof_msvc
 enable_fill
 enable_utrace
 enable_xmalloc
@@ -1457,6 +1458,7 @@ Optional Features:
   --enable-prof-libunwind Use libunwind for backtracing
   --disable-prof-libgcc   Do not use libgcc for backtracing
   --disable-prof-gcc      Do not use gcc intrinsics for backtracing
+  --disable-prof-msvc     Do not use MSVC for backtracing
   --disable-fill          Disable support for junk/zero filling
   --enable-utrace         Enable utrace(2)-based tracing
   --enable-xmalloc        Support xmalloc option
@@ -11347,6 +11349,38 @@ else
   enable_prof_gcc="0"
 fi
 
+# Check whether --enable-prof-msvc was given.
+if test "${enable_prof_msvc+set}" = set; then :
+  enableval=$enable_prof_msvc; if test "x$enable_prof_msvc" = "xno" ; then
+  enable_prof_msvc="0"
+else
+  enable_prof_msvc="1"
+fi
+
+else
+  enable_prof_msvc="1"
+
+fi
+
+if test "x$backtrace_method" = "x" -a "x$enable_prof_msvc" = "x1" \
+     -a "x$je_cv_msvc" = "xyes" ; then
+  ac_fn_c_check_func "$LINENO" "RtlCaptureStackBackTrace" "ac_cv_func_RtlCaptureStackBackTrace"
+if test "x$ac_cv_func_RtlCaptureStackBackTrace" = xyes; then :
+
+else
+  enable_prof_msvc="0"
+fi
+
+  if test "x${enable_prof_msvc}" = "x1" ; then
+    backtrace_method="msvc"
+
+$as_echo "#define JEMALLOC_PROF_MSVC  " >>confdefs.h
+
+  fi
+else
+  enable_prof_msvc="0"
+fi
+
 if test "x$backtrace_method" = "x" ; then
   backtrace_method="none (disabling profiling)"
   enable_prof="0"
@@ -15829,6 +15863,8 @@ $as_echo "prof-libunwind     : ${enable_prof_libunwind}" >&6; }
 $as_echo "prof-libgcc        : ${enable_prof_libgcc}" >&6; }
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: prof-gcc           : ${enable_prof_gcc}" >&5
 $as_echo "prof-gcc           : ${enable_prof_gcc}" >&6; }
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: prof-msvc          : ${enable_prof_msvc}" >&5
+$as_echo "prof-msvc          : ${enable_prof_msvc}" >&6; }
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: fill               : ${enable_fill}" >&5
 $as_echo "fill               : ${enable_fill}" >&6; }
 { $as_echo "$as_me:${as_lineno-$LINENO}: result: utrace             : ${enable_utrace}" >&5
